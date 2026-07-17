@@ -65,10 +65,12 @@ app.post('/api/users/:userId/secret', (req, res) => {
  */
 function handleWebhook(req, res) {
   const { userId } = req.params;
+  console.log(`[webhook] Incoming request for userId=${userId}`);
+
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
 
   if (!user || !user.webhook_secret) {
-    console.warn(`Webhook received for unknown/unconfigured user: ${userId}`);
+    console.warn(`[webhook] Unknown/unconfigured user: ${userId}`);
     return res.status(404).send('Unknown user');
   }
 
@@ -79,11 +81,12 @@ function handleWebhook(req, res) {
     .digest('hex');
 
   if (signature !== expected) {
-    console.warn(`Signature mismatch for user ${userId}`);
+    console.warn(`[webhook] Signature mismatch for user ${userId}`);
     return res.status(400).send('Invalid signature');
   }
 
   const event = JSON.parse(req.body.toString());
+  console.log(`[webhook] Event type: ${event.event}`);
 
   if (event.event !== 'payment.captured') {
     return res.status(200).send('Ignored event type');
@@ -108,6 +111,8 @@ function handleWebhook(req, res) {
     runningTotal: total / 100,
     time: new Date().toISOString(),
   });
+
+  console.log(`[webhook] Success: pushed payment of ₹${payment.amount / 100} to user ${userId}`);
 
   res.status(200).send('OK');
 }
