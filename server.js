@@ -18,7 +18,7 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}
 app.post('/webhook/:userId', express.raw({ type: 'application/json' }), handleWebhook);
 
 app.use(cors());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
 app.use(express.json());
 
 // userId -> list of connected WebSocket clients
