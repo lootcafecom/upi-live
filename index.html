@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Live UPI Payments</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; background: #f7f7f8; }
+  h1 { font-size: 1.3rem; }
+  .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; }
+  input, button { font-size: 1rem; padding: 10px; border-radius: 8px; border: 1px solid #ccc; width: 100%; box-sizing: border-box; margin-top: 6px; }
+  button { background: #2563eb; color: white; border: none; cursor: pointer; margin-top: 12px; }
+  button:hover { background: #1d4ed8; }
+  code { background: #f1f1f1; padding: 2px 6px; border-radius: 4px; word-break: break-all; display: inline-block; margin: 6px 0; }
+  ol { padding-left: 20px; font-size: 0.9rem; }
+  #total { font-size: 2.2rem; font-weight: 700; color: #10b981; text-align: center; margin: 8px 0; }
+  #status { font-size: 0.9rem; color: #666; text-align: center; }
+  #feed { list-style: none; padding: 0; }
+  #feed li { background: #ecfdf5; border-left: 4px solid #10b981; padding: 10px 12px; margin-bottom: 8px; border-radius: 6px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <h1>Live UPI Payments</h1>
+
+  <div class="card" id="signupCard">
+    <label>Your name / shop name</label>
+    <input id="nameInput" placeholder="e.g. Sharma General Store" />
+    <button onclick="createUser()">Get my webhook URL</button>
+  </div>
+
+  <div class="card hidden" id="setupCard">
+    <h3>One-time setup (2 minutes)</h3>
+    <ol id="instructionsList"></ol>
+    <label>Paste the webhook secret Razorpay gave you</label>
+    <input id="secretInput" placeholder="whsec_xxxxxxxxxxxx" />
+    <button onclick="saveSecret()">Save & start listening</button>
+  </div>
+
+  <div class="card hidden" id="liveCard">
+    <div>Total received this session</div>
+    <div id="total">₹0.00</div>
+    <div id="status">Listening for payments…</div>
+  </div>
+
+  <div class="card hidden" id="feedCard">
+    <h3>Payment Feed</h3>
+    <ul id="feed"></ul>
+  </div>
+
+  <script>
+    const BACKEND = window.location.origin;
+    let userId = null;
+    let socket = null;
+
+    async function createUser() {
+      const name = document.getElementById('nameInput').value.trim();
+      const res = await fetch(`${BACKEND}/api/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      userId = data.userId;
+
+      const list = document.getElementById('instructionsList');
+      list.innerHTML = '';
+      data.instructions.forEach((step) => {
+        const li = document.createElement('li');
+        if (step.includes('http')) {
+          li.innerHTML = step.replace(/(https?:\/\/\S+)/, '<code>$1</code>');
+        } else {
+          li.textContent = step;
+        }
+        list.appendChild(li);
+      });
+
+      document.getElementById('signupCard').classList.add('hidden');
+      document.getElementById('setupCard').classList.remove('hidden');
+    }
+
+    async function saveSecret() {
+      const webhookSecret = document.getElementById('secretInput').value.trim();
+      if (!webhookSecret) return alert('Paste the webhook secret first');
+
+      await fetch(`${BACKEND}/api/users/${userId}/secret`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhookSecret }),
+      });
+
+      document.getElementById('setupCard').classList.add('hidden');
+      document.getElementById('liveCard').classList.remove('hidden');
+      document.getElementById('feedCard').classList.remove('hidden');
+
+      connectSocket();
+    }
+
+    function connectSocket() {
+      const wsProtocol = BACKEND.startsWith('https') ? 'wss' : 'ws';
+      const wsHost = BACKEND.replace(/^https?:\/\//, '');
+      socket = new WebSocket(`${wsProtocol}://${wsHost}/ws?userId=${userId}`);
+
+      socket.onopen = () => {
+        document.getElementById('status').textContent = 'Connected — listening for payments';
+      };
+
+      socket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'payment_received') {
+          addToFeed(data);
+          updateTotal(data.runningTotal);
+          announce(data);
+        }
+      };
+
+      socket.onclose = () => {
+        document.getElementById('status').textContent = 'Disconnected';
+      };
+    }
+
+    function updateTotal(amount) {
+      document.getElementById('total').textContent = `₹${amount.toFixed(2)}`;
+    }
+
+    function addToFeed(data) {
+      const li = document.createElement('li');
+      li.textContent = `₹${data.amount} via ${data.method} from ${data.payerVpa} at ${new Date(data.time).toLocaleTimeString()}`;
+      document.getElementById('feed').prepend(li);
+    }
+
+    function announce(data) {
+      const utterance = new SpeechSynthesisUtterance(`Payment received. ${data.amount} rupees.`);
+      window.speechSynthesis.speak(utterance);
+    }
+  </script>
+</body>
+</html>
