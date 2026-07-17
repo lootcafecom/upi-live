@@ -25,19 +25,52 @@ app.use(express.json());
 const userSockets = new Map();
 
 /**
- * User signs up -> we generate a random id and their unique webhook URL.
+ * User signs up with a phone number. If that number already has an
+ * account, we return their EXISTING webhook — no duplicate ever gets
+ * created for the same number. Only a genuinely new number gets a new
+ * userId and a new webhook URL to register in Razorpay.
  */
 app.post('/api/users', (req, res) => {
-  const { name } = req.body;
-  const id = crypto.randomBytes(8).toString('hex');
+  const { name, phone } = req.body;
 
-  db.prepare(`INSERT INTO users (id, name, webhook_secret) VALUES (?, ?, '')`).run(id, name || 'Unnamed');
+  if (!phone || !/^\d{10}$/.test(phone.trim())) {
+    return res.status(400).json({ error: 'A valid 10-digit mobile number is required' });
+  }
+  const cleanPhone = phone.trim();
+
+  const existing = db.prepare('SELECT * FROM users WHERE phone = ?').get(cleanPhone);
+
+  if (existing) {
+    return res.json({
+      userId: existing.id,
+      webhookUrl: `${PUBLIC_BASE_URL}/webhook/${existing.id}`,
+      isReturningUser: true,
+      hasSecret: !!existing.webhook_secret,
+      instructions: existing.webhook_secret
+        ? ['This number is already set up — you can go straight to the live view.']
+        : [
+            '1. Go to your Razorpay Dashboard -> Developers -> Webhooks -> Add New Webhook',
+            `2. Paste this URL: ${PUBLIC_BASE_URL}/webhook/${existing.id}`,
+            '3. Select the event: payment.captured',
+            '4. Razorpay will show you a webhook secret -- copy it and paste it below',
+          ],
+    });
+  }
+
+  const id = crypto.randomBytes(8).toString('hex');
+  db.prepare(`INSERT INTO users (id, name, phone, webhook_secret) VALUES (?, ?, ?, '')`).run(
+    id,
+    name || 'Unnamed',
+    cleanPhone
+  );
 
   res.json({
     userId: id,
     webhookUrl: `${PUBLIC_BASE_URL}/webhook/${id}`,
+    isReturningUser: false,
+    hasSecret: false,
     instructions: [
-      '1. Go to your Razorpay Dashboard -> Settings -> Webhooks -> Add New Webhook',
+      '1. Go to your Razorpay Dashboard -> Developers -> Webhooks -> Add New Webhook',
       `2. Paste this URL: ${PUBLIC_BASE_URL}/webhook/${id}`,
       '3. Select the event: payment.captured',
       '4. Razorpay will show you a webhook secret -- copy it and paste it below',

@@ -25,6 +25,8 @@
   <div class="card" id="signupCard">
     <label>Your name / shop name</label>
     <input id="nameInput" placeholder="e.g. Sharma General Store" />
+    <label>Mobile number (used to identify your account)</label>
+    <input id="phoneInput" placeholder="e.g. 9876543210" maxlength="10" />
     <button onclick="createUser()">Get my webhook URL</button>
   </div>
 
@@ -70,14 +72,34 @@
 
     async function createUser() {
       const name = document.getElementById('nameInput').value.trim();
+      const phone = document.getElementById('phoneInput').value.trim();
+
+      if (!/^\d{10}$/.test(phone)) {
+        return alert('Enter a valid 10-digit mobile number');
+      }
+
       const res = await fetch(`${BACKEND}/api/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, phone }),
       });
       const data = await res.json();
+
+      if (!res.ok) {
+        return alert(data.error || 'Something went wrong');
+      }
+
       userId = data.userId;
       localStorage.setItem('upi_user_id', userId);
+
+      // Returning number that's already fully set up -> skip straight to live view.
+      if (data.isReturningUser && data.hasSecret) {
+        document.getElementById('signupCard').classList.add('hidden');
+        document.getElementById('liveCard').classList.remove('hidden');
+        document.getElementById('feedCard').classList.remove('hidden');
+        connectSocket();
+        return;
+      }
 
       const list = document.getElementById('instructionsList');
       list.innerHTML = '';

@@ -6,6 +6,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT,
+    phone TEXT UNIQUE NOT NULL,
     webhook_secret TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
